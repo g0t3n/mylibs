@@ -1,6 +1,8 @@
 #!/bin/env python2
 #coding:utf-8
-
+"""
+最原始的socks 代理
+"""
 import struct
 import socket
 import select
@@ -19,13 +21,16 @@ class socks5server:
 
     def server_for_ever(self, ip, port):
         self.ser_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if __DEBUG__:
+            print "[*] binding %s:%s" % (ip, port)
         self.ser_sock.bind((ip, port))
         self.ser_sock.listen(200)
         while True:
             cli, addrinfo = self.ser_sock.accept()
-            if __DEBUG__:
-                print "[*] get connect from %s:%s" % (addrinfo[0], addrinfo[1])
+            #if __DEBUG__:
+            #    print "[*] get connect from %s:%s" % (addrinfo[0], addrinfo[1])
             p = threading.Thread(target=self.handler_cli, args=(cli,))
+            p.setDaemon(True)
             p.start()
         # nerver reach here
 
@@ -35,16 +40,17 @@ class socks5server:
             # handshake one
             data = cli_socket.recv(3)
             if data[0] != '\x05':
-                raise bad_data
+                data.send('HTTP/1.1 404 Not Found\r\nETag: "6t7yu7"')
+                raise Exception('protocol mismatch')
             if data[1] != '\x01' and data[2] != '\x00':
                 if __DEBUG__:
                     print "[*] not support auth.. check client"
-                raise bad_data
+                raise Exception('not support auth..')
             req = '\x05\x00'; cli_socket.send(req)
             # handshake two
             data = cli_socket.recv(4)
             if data[0:3] != '\x05\x01\x00':
-                raise bad_data
+                raise Exception('protocol mismatch')
             #print "here?"
             if data[3] == '\x01':  # inet_ntoa ,ntohs
                 data += cli_socket.recv(4 + 2)
@@ -57,7 +63,7 @@ class socks5server:
                 dst_addr = socket.gethostbyname(data[4:-2]) # 保证
                 dst_port = int(struct.unpack('>H', data[-2:])[0])
             else:
-                raise bad_data
+                raise Exception('-,- no addr? ')
         except bad_data:
             cli_socket.close()
             if __DEBUG__:
@@ -67,8 +73,8 @@ class socks5server:
             if __DEBUG__:
                 print traceback.format_exc()
             return False
-        if __DEBUG__:
-            print " go foreign %s:%s" % (dst_addr, dst_port)
+        #if __DEBUG__:
+        #    print " got foreign %s:%s" % (dst_addr, dst_port)
         dst_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM);
         try:
             dst_socket.connect((dst_addr, dst_port))
@@ -77,21 +83,36 @@ class socks5server:
         except:
             cli_socket.send('\x05\x05\x00\x01\x00\x00\x00\x00\x00\x00')  # 失败
             return
-        print "success , start to trans data"
+
         self.trans_data(cli_socket, dst_socket)
+        #print "good bye socket"
 
     def trans_data(self, cli_socket, dst_socket):
         sock_list = (cli_socket, dst_socket)
+        #print "success , start to trans data"
         while True:
             (rlist, wlist, xlist) = select.select(sock_list, [], [])
-            for i in rlist:
-                if i == cli_socket:
-                    data = i.recv(20)  # !! 会不会阻塞?
-                    dst_socket.send(data)  # fixme!!
-                elif i == dst_socket:
-                    data = i.recv(20)
-                    cli_socket.send(data)
-
+            #for i in rlist:
+            if cli_socket in rlist:
+                data = cli_socket.recv(300)
+                if len(data) <= 0:
+                    #if __DEBUG__:
+                    #    print "cli socket close"
+                    break
+                sendlen = dst_socket.send(data)
+                if sendlen != len(data):
+                    raise Exception("dst_socket fail send all data ")
+            if dst_socket in rlist:
+                data = dst_socket.recv(300)
+                if len(data) <= 0:
+                    #if __DEBUG__:
+                    #    print "dst socket close"
+                    break
+                sendlen = cli_socket.send(data)
+                if sendlen != len(data):
+                    raise Exception, "cli_socket fail send all data"
+        cli_socket.close()
+        dst_socket.close()
 # test
 if __name__ == '__main__':
-    c = socks5server(ip='192.168.253.129')
+    c = socks5server(ip='192.168.1.100')
