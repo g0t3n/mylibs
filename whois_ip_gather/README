@@ -1,0 +1,28 @@
+WHY
+#####
+通过遍历各个 ip 获得 ip 的 whois 注册信息
+
+
+INFO
+#####
+database - sqlalchemy 使用的数据库
+trdlib - 第三方依赖
+
+
+HOW
+#####
+--第一个版本不打算优化 以最快的速度先实现了起来--
+ip 地址库是 255*256*256*256 + 255*256*256 + 255*256 + 256 = 四十亿个
+估算即四十亿估算 100字节的 whois 结果即最起码 4G 大小
+因此优化是必须的
+最基本的优化方法是 ip range
+以 a 段地址分表
+
+
+Exception :
+
+* 如何更新 ip range
+
+REFENCE
+#####
+whois query lib : https://github.com/secynic/ipwhois
